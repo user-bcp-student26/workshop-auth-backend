@@ -15,7 +15,6 @@ import java.util.Map;
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public class AuthResource {
-    private static final int TOKEN_LIFETIME_SECONDS = 3600;
     private static final String NULL_REQUEST = "Request is null";
     private static final String REQUIRED_USERNAME = "Username is required";
     private static final String REQUIRED_PASSWORD = "Password is required";
@@ -23,6 +22,9 @@ public class AuthResource {
 
     @Inject
     AuthService service;
+
+    @Inject
+    AuthTokenService tokens;
 
     @POST
     @Path("/login")
@@ -65,8 +67,8 @@ public class AuthResource {
 
     private Response successfulLogin(UserRecord user) {
         return Response.ok(Map.of(
-                "token", LegacyTokenUtil.create(user.username(), user.role()),
-                "expiresIn", TOKEN_LIFETIME_SECONDS,
+                "token", tokens.create(user.username(), user.role()),
+                "expiresIn", AuthTokenService.LIFETIME_SECONDS,
                 "debug", DEBUG_FLOW,
                 "user", Map.of("username", user.username(),
                         "displayName", StringEscapeUtils.escapeHtml4(user.displayName()), "role", user.role())

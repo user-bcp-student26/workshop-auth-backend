@@ -1,6 +1,6 @@
 # Endpoints del backend de autenticacion
 
-Contrato de la implementacion local revisada el 2026-10-19, no de cambios futuros: la consulta de credenciales esta parametrizada, pero las contrasenas siguen en claro y el token sigue siendo Base64 sin firma. No se modifico codigo para escribir este documento.
+Contrato de la implementacion local revisada el 2026-10-19, no de cambios futuros: la consulta de credenciales esta parametrizada, pero las contrasenas siguen en claro y el token es un JWT HS256 firmado con AUTH_TOKEN_SECRET. No se modifico codigo para escribir este documento.
 
 ## Conexion y verificacion
 
@@ -64,7 +64,7 @@ Estado: **200 OK**. Content-Type observado: `application/json; charset=UTF-8`.
 
 | campo | tipo | descripcion |
 |---|---|---|
-| token | string | Token generado para username y role. Base64, no JWT firmado; cambia con el instante de emision. |
+| token | string | JWT HS256 firmado con AUTH_TOKEN_SECRET; claims username, role e iat/exp. Cambia en cada emision. |
 | expiresIn | number entero | Valor fijo 3600, expresado en segundos. No demuestra que el servidor valide tokens expirados. |
 | user | object | Identidad devuelta; contiene exclusivamente los tres campos siguientes. |
 | user.username | string | Nombre almacenado de la cuenta autenticada. |
@@ -72,7 +72,7 @@ Estado: **200 OK**. Content-Type observado: `application/json; charset=UTF-8`.
 | user.role | string | Rol almacenado; las cuentas sembradas usan STUDENT y TRAINER. No hay enum que limite todos los valores posibles de la base. |
 | debug | string | Literal authenticated-with-legacy-flow; forma parte de la respuesta actual. |
 
-Ejemplo completo capturado en la instancia aislada; el token es un valor historico de laboratorio, no una credencial para reutilizar:
+Ejemplo de forma; el token real es un JWT firmado y de vida limitada, no una credencial para reutilizar:
 
 ```json
 {
@@ -83,7 +83,7 @@ Ejemplo completo capturado en la instancia aislada; el token es un valor histori
     "role": "STUDENT",
     "username": "student"
   },
-  "token": "c3R1ZGVudHxTVFVERU5UfDE3OTI0NTA1NjR8V09SS1NIT1BfU0VDUkVUXzIwMjY="
+  "token": "<JWT HS256>"
 }
 ```
 
@@ -127,7 +127,7 @@ HTTP/1.1 415 Unsupported Media Type
 
 ### 6. Notas de seguridad
 
-- El token NO esta firmado: es Base64 UTF-8 de username, role, expiracion Unix y secreto fijo, separados por `|`. No es cifrado ni prueba de integridad. Evidencia: [LegacyTokenUtil.java:8](../src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L8), [LegacyTokenUtil.java:13](../src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L13), [LegacyTokenUtil.java:14](../src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L14) y [LegacyTokenUtil.java:15](../src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L15).
+- El token es JWT HS256 firmado con `AUTH_TOKEN_SECRET`; el servicio no arranca sin esa clave ni con una clave menor de 32 caracteres. Evidencia: [AuthTokenService.java](../src/main/java/com/bcp/workshop/auth/AuthTokenService.java).
 - Se calcula un instante de expiracion a una hora, pero este backend no contiene un endpoint protegido o un verificador que lo haga cumplir. Pregunta abierta: como lo validan los consumidores; no se inspeccionaron otros componentes.
 - La consulta usa PreparedStatement y setString ([LegacyDatabase.java:37](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L37)), pero sigue comparando passwords en claro y siembra cuentas publicas ([LegacyDatabase.java:19](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L19), [LegacyDatabase.java:27](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L27)). No usar credenciales reales ni desplegar este laboratorio en Internet.
 - CORS permite cualquier origen; no equivale a autenticacion. HTTP local no ofrece TLS y las respuestas 500 exponen detalles. Evidencia: [application.properties:5](../src/main/resources/application.properties#L5), [AuthResource.java:56](../src/main/java/com/bcp/workshop/auth/AuthResource.java#L56) y advertencia de [README.md](../README.md).
@@ -222,4 +222,4 @@ No asumir que un metodo distinto devuelve 405: la extension respondio tambien al
 
 Documentos: version anterior de este contrato, [README.md](../README.md), [docs/GOOD_PRACTICES.md](GOOD_PRACTICES.md) y [REGLAS.md](../REGLAS.md).
 
-Implementacion y pruebas: [AuthResource.java](../src/main/java/com/bcp/workshop/auth/AuthResource.java), [LoginRequest.java](../src/main/java/com/bcp/workshop/auth/LoginRequest.java), [LegacyDatabase.java](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java), [LegacyTokenUtil.java](../src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java), [AuthResourceTest.java](../src/test/java/com/bcp/workshop/auth/AuthResourceTest.java), [application.properties](../src/main/resources/application.properties) y [pom.xml](../pom.xml). Las observaciones HTTP complementan el codigo para respuestas generadas por el framework; no se inspeccionaron otros componentes.
+Implementacion y pruebas: [AuthResource.java](../src/main/java/com/bcp/workshop/auth/AuthResource.java), [LoginRequest.java](../src/main/java/com/bcp/workshop/auth/LoginRequest.java), [LegacyDatabase.java](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java), [AuthTokenService.java](../src/main/java/com/bcp/workshop/auth/AuthTokenService.java), [AuthResourceTest.java](../src/test/java/com/bcp/workshop/auth/AuthResourceTest.java), [application.properties](../src/main/resources/application.properties) y [pom.xml](../pom.xml). Las observaciones HTTP complementan el codigo para respuestas generadas por el framework; no se inspeccionaron otros componentes.

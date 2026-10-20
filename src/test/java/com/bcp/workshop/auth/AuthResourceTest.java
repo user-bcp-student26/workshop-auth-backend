@@ -1,18 +1,17 @@
 package com.bcp.workshop.auth;
 
 import io.quarkus.test.junit.QuarkusTest;
+import com.auth0.jwt.JWT;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -29,6 +28,9 @@ class AuthResourceTest {
 
     @Inject
     AuthService service;
+
+    @Inject
+    AuthTokenService tokens;
 
     @BeforeEach
     void prepareDatabase() throws Exception {
@@ -48,7 +50,7 @@ class AuthResourceTest {
     }
 
     @Test
-    void characterizesStudentResponseAndLegacyToken() {
+    void characterizesStudentResponseAndSignedToken() {
         assertSuccessfulLogin("student", "Workshop123!", "Workshop Student", "STUDENT");
     }
 
@@ -250,12 +252,11 @@ class AuthResourceTest {
                 .body("user", is(Map.of("username", username, "displayName", displayName, "role", role)))
                 .extract().jsonPath().getMap("$");
         assertEquals(java.util.Set.of("token", "expiresIn", "user", "debug"), response.keySet());
-        String[] tokenParts = new String(Base64.getDecoder().decode((String) response.get("token")),
-                StandardCharsets.UTF_8).split("\\|", -1);
-        assertEquals(4, tokenParts.length);
-        assertEquals(username, tokenParts[0]);
-        assertEquals(role, tokenParts[1]);
-        long expiry = Long.parseLong(tokenParts[2]);
+        String token = (String) response.get("token");
+        AuthTokenService.VerifiedToken identity = tokens.verify(token);
+        assertEquals(username, identity.username());
+        assertEquals(role, identity.role());
+        long expiry = JWT.decode(token).getExpiresAtAsInstant().getEpochSecond();
         assertTrue(expiry >= beforeLogin + 3600);
         assertTrue(expiry <= Instant.now().getEpochSecond() + 3600);
     }

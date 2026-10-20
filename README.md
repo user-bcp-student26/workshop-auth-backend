@@ -26,11 +26,11 @@ Credenciales locales:
 
 ## Propósito de la rama `main`
 
-La rama contiene deuda técnica y de seguridad deliberada: SQL concatenado, contraseñas en texto plano, token reversible, secreto hardcodeado, CORS permisivo, método largo, manejo genérico de excepciones y dependencias con CVEs.
+La rama contiene deuda técnica y de seguridad deliberada: SQL concatenado, contraseñas en texto plano, CORS permisivo, método largo, manejo genérico de excepciones y dependencias con CVEs.
 
 ## H-02: almacenamiento de contrasenas y migracion local
 
-La implementacion local usa PBKDF2WithHmacSHA256 del JDK, salt aleatorio de 16 bytes y derivado de 32 bytes. El formato almacenado es `v1$pbkdf2-sha256$iterations$saltBase64$hashBase64`. El servicio busca por username parametrizado y verifica el hash; no autentica contra texto plano ni expone el derivado en HTTP. El token legacy, CORS y las respuestas HTTP no fueron corregidos como parte de H-02.
+La implementacion local usa PBKDF2WithHmacSHA256 del JDK, salt aleatorio de 16 bytes y derivado de 32 bytes. El formato almacenado es `v1$pbkdf2-sha256$iterations$saltBase64$hashBase64`. El servicio busca por username parametrizado y verifica el hash; no autentica contra texto plano ni expone el derivado en HTTP. CORS y las respuestas HTTP no fueron corregidos como parte de H-02.
 
 Configuracion:
 
@@ -38,6 +38,7 @@ Configuracion:
 |---|---|---|
 | AUTH_DB_URL | jdbc:sqlite:./data/workshop.db | Archivo SQLite local. La migracion requiere una URL de archivo simple; no admite memory, URI file: ni parametros de conexion porque necesita identificar y respaldar el archivo exacto. |
 | AUTH_PASSWORD_ITERATIONS | 600000 | Coste para hashes nuevos; rango aprobado 600000 a 1200000. Valores fuera del rango impiden el arranque. No reducir el coste para cumplir una prueba de rendimiento. |
+| AUTH_TOKEN_SECRET | (sin valor por defecto) | Clave HMAC de firma JWT; minimo 32 caracteres. Sin ella el servicio no arranca. Usar valores de laboratorio, nunca secretos reales. |
 
 Las cuentas publicas student/trainer mantienen sus credenciales de laboratorio, pero la siembra guarda hashes y no sobrescribe usuarios existentes. No agregar credenciales reales a los fixtures. Cambiar el coste no recalcula hashes existentes durante un reinicio.
 
