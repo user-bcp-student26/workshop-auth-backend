@@ -1,0 +1,8 @@
+# Token de autenticacion sin firma criptografica
+
+- Estado: CANDIDATO
+- Evidencia: El backend incluye un secreto fijo en el contenido del token y lo codifica con Base64, que no garantiza integridad ni confidencialidad ([LegacyTokenUtil.java](src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L8-L15)). La API consumidora decodifica el token y acepta sus campos cuando coinciden con el formato, el secreto y la expiracion, sin verificar una firma ([main.py](../workshop-requirements-api/app/main.py#L17-L22)). El endpoint de login entrega ese token en la respuesta ([AuthResource.java](src/main/java/com/bcp/workshop/auth/AuthResource.java#L65-L68)).
+- Impacto: La identidad aceptada por la API depende de datos modificables y de un secreto fijo compartido. Si un tercero puede obtener o inferir el formato y el secreto, podria suplantar identidades. La autenticacion entre Quarkus y FastAPI no cuenta actualmente con una prueba criptografica de integridad.
+- Prioridad propuesta: P1 si la API se expone fuera del laboratorio; confirmar el modelo de amenazas y la accesibilidad del servicio antes de asignar prioridad definitiva.
+- Contrato potencialmente afectado: Formato, emision y aceptacion del token entre `POST /auth/login` y las rutas `/api/*` protegidas mediante `Bearer`. Un cambio de formato tambien puede afectar sesiones ya emitidas.
+- Como validarlo: En pruebas de integracion con servicios y datos aislados, verificar que se rechacen tokens alterados, sin firma, expirados o emitidos con una clave no autorizada, y que se acepten los validos. Documentar la compatibilidad y la invalidacion de sesiones durante una eventual migracion. No usar secretos ni tokens de un entorno compartido.
