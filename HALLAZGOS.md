@@ -1,0 +1,98 @@
+# Hallazgos del flujo de login
+
+Revision inicial de los siete casos de [RETO.md](RETO.md), actualizada con la implementacion de H-01 y H-02 el 2026-10-19 conforme a las aprobaciones de Paul Elguera registradas en [PLAN.md](PLAN.md). Este archivo es la unica matriz de seguimiento; las siguientes intervenciones de `2-refactor.md` deben actualizar estas filas conservando sus identificadores. Se mantiene evidencia historica por etapa y no se ejecutaron explotaciones.
+
+Las severidades expresan el riesgo tecnico; el laboratorio debe permanecer aislado conforme a [README.md](README.md). Los siete casos tienen evidencia local, por lo que ninguno se marca como "No encontrado". La presencia de versiones de dependencias no demuestra por si sola un CVE aplicable o explotable.
+
+| id | hallazgo | tipo | explicacion | evidencia (archivo:linea) | severidad | estado |
+|---|---|---|---|---|---|---|
+| H-01 | SQL: concatenacion de credenciales | Vulnerabilidad | Riesgo original: las entradas podian alterar el SQL de autenticacion. SQL constante, PreparedStatement y setString lo corrigen; tras H-02 solo se consulta username y el password se verifica fuera del SQL. Se conserva null/401 ante fallo de consulta. | [LegacyDatabase.java:79](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L79); [LegacyDatabase.java:81](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L81); [LegacyDatabase.java:82](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L82) | alta | Pendiente |
+| H-02 | Datos: contrasenas en texto plano | Vulnerabilidad | Se sustituyo el claro por PBKDF2 con salt, 600000 iteraciones y migracion transaccional sin fallback. PasswordHasherTest, PasswordMigrationTest, AuthServiceTest y storesOnlyVersionedHashes verifican hash, rollback y contrato; [diff local](target/h02-evidence/H-02.patch). | [PasswordHasher.java:46](src/main/java/com/bcp/workshop/auth/PasswordHasher.java#L46); [PasswordMigration.java:48](src/main/java/com/bcp/workshop/auth/PasswordMigration.java#L48); [AuthService.java:17](src/main/java/com/bcp/workshop/auth/AuthService.java#L17); [LegacyDatabase.java:72](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L72) | alta | Pendiente |
+| H-03 | Token: Base64 con secreto embebido, sin firma | Vulnerabilidad | El token codifica username, rol, expiracion y secreto en Base64 reversible, no en una firma criptografica. Cualquier receptor puede recuperar el secreto y modificar el contenido sin una garantia de integridad del emisor. Se calcula expiracion, pero este backend no contiene un validador de tokens; no se afirma como se validan en otros componentes. | [LegacyTokenUtil.java:8](src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L8); [LegacyTokenUtil.java:13](src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L13); [LegacyTokenUtil.java:14](src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L14); [LegacyTokenUtil.java:15](src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L15) | alta | Pendiente |
+| H-04 | Configuracion: secreto fijo y CORS permisivo | Vulnerabilidad | El secreto esta fijado en Java, dificultando su rotacion por entorno. CORS ya esta en application.properties, pero su expresion acepta cualquier origen y habilita metodos y cabeceras amplios: una pagina de un origen no confiable puede realizar peticiones permitidas y leer respuestas cuando las reglas del navegador lo permitan. No se presupone envio de cookies ni robo automatico de sesiones. | [LegacyTokenUtil.java:8](src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L8); [application.properties:4](src/main/resources/application.properties#L4); [application.properties:5](src/main/resources/application.properties#L5); [application.properties:6](src/main/resources/application.properties#L6); [application.properties:7](src/main/resources/application.properties#L7) | media | Pendiente |
+| H-05 | Errores: respuesta expone detalles internos | Vulnerabilidad | El catch del Resource devuelve el mensaje original y el nombre completo de la excepcion en HTTP 500. Una excepcion que llegue a esta rama puede revelar clases y detalles internos utiles para reconocimiento. Las excepciones SQL se capturan en LegacyDatabase y retornan null, por lo que no se afirma que sus mensajes lleguen a esta respuesta. | [AuthResource.java:41](src/main/java/com/bcp/workshop/auth/AuthResource.java#L41); [AuthResource.java:43](src/main/java/com/bcp/workshop/auth/AuthResource.java#L43); [AuthResource.java:44](src/main/java/com/bcp/workshop/auth/AuthResource.java#L44); [LegacyDatabase.java:88](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L88); [LegacyDatabase.java:91](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L91) | media | Pendiente |
+| H-06 | SCA: Quarkus 3.27.4 y Commons Text 1.9 declarados | Sugerencia | Se confirman ambas versiones y el uso de Commons Text para escape HTML. Falta contrastar advisories, dependencias resueltas y alcance del uso para determinar CVEs aplicables; no se acredita explotabilidad por la version ni por escapeHtml4. La severidad es preliminar para priorizar esa investigacion, no una calificacion de un CVE confirmado. | [pom.xml:13](pom.xml#L13); [pom.xml:23](pom.xml#L23); [pom.xml:50](pom.xml#L50); [pom.xml:51](pom.xml#L51); [AuthResource.java:72](src/main/java/com/bcp/workshop/auth/AuthResource.java#L72) | media | Pendiente |
+| H-07 | Clean code: Resource concentra validacion, negocio, acceso a persistencia y respuesta | Refactor | La concentracion original dificultaba mantenimiento y pruebas. H-02 introdujo la separacion minima necesaria entre HTTP, servicio, repositorio y hasher, con guard clauses y mapeo separado. Queda pendiente su revision y cierre propio; no se declara resuelto otro hallazgo por efecto lateral de H-02. | [AuthResource.java:29](src/main/java/com/bcp/workshop/auth/AuthResource.java#L29); [AuthService.java:17](src/main/java/com/bcp/workshop/auth/AuthService.java#L17); [LegacyDatabase.java:79](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L79) | baja | Pendiente |
+
+## Mapa del flujo actual
+
+1. Configuracion: HTTP local en puerto 8080 y host 127.0.0.1; el perfil prod usa 0.0.0.0 ([application.properties:1](src/main/resources/application.properties#L1)). CORS permite cualquier origen y Jackson ignora campos desconocidos ([application.properties:5](src/main/resources/application.properties#L5), [application.properties:8](src/main/resources/application.properties#L8)).
+2. Persistencia al iniciar: LegacyDatabase toma AUTH_DB_URL o usa jdbc:sqlite:./data/workshop.db; migra antes de servir peticiones y siembra hashes de las cuentas de laboratorio. Los fallos de inicializacion abortan el arranque ([LegacyDatabase.java:18](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L18), [LegacyDatabase.java:36](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L36), [PasswordMigration.java:48](src/main/java/com/bcp/workshop/auth/PasswordMigration.java#L48)).
+3. Entrada: POST /auth/login recibe username, password y client; este ultimo no interviene en autenticacion ([LoginRequest.java:3](src/main/java/com/bcp/workshop/auth/LoginRequest.java#L3), [AuthResource.java:29](src/main/java/com/bcp/workshop/auth/AuthResource.java#L29)).
+4. Validacion: request nulo, username ausente/vacio y password ausente/vacio producen 400 en ese orden mediante guard clauses. Se conservan las cadenas originales ([AuthResource.java:49](src/main/java/com/bcp/workshop/auth/AuthResource.java#L49)).
+5. Autenticacion: findByUsername enlaza solo username; AuthService verifica PBKDF2 y devuelve identidad sin hash. Ausencia, hash corrupto y password incorrecto producen 401; el fallo de consulta conserva null/401 ([LegacyDatabase.java:79](src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L79), [AuthService.java:17](src/main/java/com/bcp/workshop/auth/AuthService.java#L17), [PasswordHasher.java:67](src/main/java/com/bcp/workshop/auth/PasswordHasher.java#L67)).
+6. Token/salida: el token legacy permanece sin cambios. HTTP 200 conserva token, expiresIn, user y debug; displayName sigue escapado y no se expone hash ni id ([LegacyTokenUtil.java:13](src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L13), [AuthResource.java:66](src/main/java/com/bcp/workshop/auth/AuthResource.java#L66)).
+7. Excepciones: las no absorbidas que llegan al Resource conservan 500 con message y exception ([AuthResource.java:41](src/main/java/com/bcp/workshop/auth/AuthResource.java#L41)). El contrato cliente de [docs/ENDPOINTS.md](docs/ENDPOINTS.md) se mantuvo intacto; sus descripciones internas legacy no se reescribieron en este alcance.
+
+## Evidencia de implementacion H-01 (2026-10-19)
+
+Este apartado es un corte historico anterior a H-02; las afirmaciones de archivos/estados y cifras siguientes corresponden a esa etapa. El XML preservado es historico; el HTML bajo target/site representa la ultima generacion.
+
+Se escribieron y ejecutaron primero las pruebas de [AuthResourceTest.java](src/test/java/com/bcp/workshop/auth/AuthResourceTest.java) y [LegacyDatabaseTest.java](src/test/java/com/bcp/workshop/auth/LegacyDatabaseTest.java), sin tocar produccion. Cada fase conserva reportes Surefire bajo target/h01-evidence; estos artefactos son locales y no estan versionados.
+
+| Fase | Comando | Resultado | Reportes locales |
+|---|---|---|---|
+| Caracterizacion antes | `mvn -B -Dtest=AuthResourceTest,LegacyDatabaseTest -DexcludedGroups=correction test` | 18 pruebas, 0 fallos, 0 errores | [HTTP](target/h01-evidence/characterization-before/com.bcp.workshop.auth.AuthResourceTest.txt), [JDBC](target/h01-evidence/characterization-before/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+| Correccion antes | `mvn -B -Dtest=AuthResourceTest,LegacyDatabaseTest -Dgroups=correction test` | 4 pruebas, 3 fallos esperados por apostrofos, 0 errores; 1 rechazo de entradas no coincidentes ya pasaba | [HTTP](target/h01-evidence/correction-before/com.bcp.workshop.auth.AuthResourceTest.txt), [JDBC](target/h01-evidence/correction-before/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+| Correccion despues | Mismo comando de correccion | 4 pruebas, 0 fallos, 0 errores | [HTTP](target/h01-evidence/correction-after/com.bcp.workshop.auth.AuthResourceTest.txt), [JDBC](target/h01-evidence/correction-after/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+| Caracterizacion despues | Mismo comando de caracterizacion | 18 pruebas, 0 fallos, 0 errores | [HTTP](target/h01-evidence/characterization-after/com.bcp.workshop.auth.AuthResourceTest.txt), [JDBC](target/h01-evidence/characterization-after/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+| Gate completo | `mvn -B verify` sin filtros | 22 pruebas, 0 fallos, 0 errores; BUILD SUCCESS | [HTTP](target/h01-evidence/verify-after/com.bcp.workshop.auth.AuthResourceTest.txt), [JDBC](target/h01-evidence/verify-after/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+
+Cobertura JaCoCo de LegacyDatabase, unica clase productiva modificada: 25/25 lineas (100%), 102/102 instrucciones (100%), 5/5 metodos (100%) y 5/8 ramas (62,5%). Se cumple el 85% por lineas; no se afirma 85% de ramas. Evidencia: [reporte XML](target/h01-evidence/verify-after/jacoco.xml) y [reporte HTML](target/site/jacoco/index.html). No se cambiaron pom.xml, exclusiones ni workflows; CodeQL y Dependency Review quedan para su ejecucion en CI, no se ejecutaron localmente.
+
+Diffs: [produccion y prueba HTTP](target/h01-evidence/H-01-tracked.diff), [nueva prueba JDBC](target/h01-evidence/H-01-new-test.diff). Las huellas del contrato, PLAN.md, AuthResource, LegacyTokenUtil, pom.xml y workflows permanecen iguales a las previas a esta implementacion.
+
+Incidencia de prueba: el primer baseline detecto que Quarkus desregistra el driver JDBC al cerrar su classloader. Se reparo solo el fixture registrando el driver SQLite existente si falta; luego se repitio la misma caracterizacion y paso antes de modificar produccion. No se agregaron dependencias ni secretos reales. La sesion de terminal actualizo PATH/JAVA_HOME desde las variables ya instaladas, sin cambios persistentes. Todas las pruebas usaron AUTH_DB_URL a un archivo exclusivo bajo target, no la base de desarrollo.
+
+Desviaciones: ninguna funcional respecto de H-01. La reparacion del fixture anterior fue necesaria para ejecutar pruebas mixtas Quarkus/JDBC. H-02 y los demas hallazgos no se implementaron; la aprobacion registrada solo autoriza H-01.
+
+## Evidencia de implementacion H-02 (2026-10-19)
+
+Se implemento solo H-02 con 600000 iteraciones y rango 600000-1200000, conforme a su aprobacion. Las pruebas y diffs locales estan bajo target/h02-evidence, no versionados. No se uso la base de desarrollo ni secretos reales. Los diffs son incrementales respecto del estado local anterior a H-02, no una mezcla con cambios previos de H-01.
+
+| Etapa | Prueba/comando ejecutado desde la raiz | Resultado real | Evidencia |
+|---|---|---|---|
+| Caracterizacion antes | `mvn -B -DexcludedGroups=h02-correction test` | 39 tests, sin fallos/errores, exit 0 | [HTTP](target/h02-evidence/characterization-before/com.bcp.workshop.auth.AuthResourceTest.txt), [JDBC](target/h02-evidence/characterization-before/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+| Correccion antes | `mvn -B -Dtest=LegacyDatabaseTest#storesOnlyVersionedHashes test` | 1 test falla porque existe password en claro; exit 1 | [Fallo previo](target/h02-evidence/correction-before/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+| Hashing aislado | `mvn -B -Dtest=PasswordHasherTest test` | 7 tests pasan, exit 0 | [Test](target/h02-evidence/hashing/com.bcp.workshop.auth.PasswordHasherTest.txt), [diff](target/h02-evidence/01-hashing.patch) |
+| Migracion aislada, verificacion final | `mvn -B -Dtest=PasswordMigrationTest,AuthResourceTest test` | 10 tests de migracion y 25 HTTP pasan, exit 0 | [Migracion](target/h02-evidence/migration/com.bcp.workshop.auth.PasswordMigrationTest.txt), [diff](target/h02-evidence/02-migration.patch) |
+| Integracion de servicio/repositorio/API | `mvn -B -Dtest=AuthServiceTest,AuthResourceTest,LegacyDatabaseTest,HealthResourceTest test` | 46 tests pasan en el primer corte; se agregaron despues dos casos HTTP y un caso de volumen | [Servicio](target/h02-evidence/integration/com.bcp.workshop.auth.AuthServiceTest.txt), [diff](target/h02-evidence/03-integration.patch) |
+| Caracterizacion despues | `mvn -B -Dtest=AuthResourceTest,HealthResourceTest,LegacyDatabaseTest -DexcludedGroups=h02-correction,h02-integration test` | 39 tests, sin fallos/errores, exit 0 | [HTTP](target/h02-evidence/characterization-after/com.bcp.workshop.auth.AuthResourceTest.txt), [JDBC](target/h02-evidence/characterization-after/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+| Misma correccion despues | `mvn -B -Dtest=LegacyDatabaseTest#storesOnlyVersionedHashes test` | 1 test pasa, exit 0 | [Correccion](target/h02-evidence/correction-after/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+| Gate completo | `mvn -B -Djacoco.destFile=target/h02-evidence/coverage-9a24a2d60c444496a479f2a58d688d8e.exec -Djacoco.dataFile=target/h02-evidence/coverage-9a24a2d60c444496a479f2a58d688d8e.exec verify` | 65 tests pasan, 0 fallos/errores/omitidos, exit 0 | [HTTP](target/h02-evidence/verify/com.bcp.workshop.auth.AuthResourceTest.txt), [Servicio](target/h02-evidence/verify/com.bcp.workshop.auth.AuthServiceTest.txt), [Migracion](target/h02-evidence/verify/com.bcp.workshop.auth.PasswordMigrationTest.txt), [JDBC](target/h02-evidence/verify/com.bcp.workshop.auth.LegacyDatabaseTest.txt) |
+
+La caracterizacion conserva assertions HTTP, mensajes, escape, roles y token. Un cambio de expectativa es intencional y aprobado: el test que antes permitia silenciar fallos de initialize ahora exige fallo de arranque; no es una alteracion del contrato HTTP. Los helpers JDBC se adaptaron al esquema seguro y a AuthService al eliminar findByCredentials; no se mantuvo una segunda ruta con password en SQL.
+
+Pruebas de correccion adicionales: salts diferentes, claves Unicode/largas/espacios, limites KDF, formatos corruptos, sin fallback, login HTTP tras migracion, backup/restore, rollback, indices/triggers, version de esquema, bloqueo concurrente e idempotencia. Durante el desarrollo se detecto y corrigio perdida de secuencia en tablas vacias; su regresion queda en PasswordMigrationTest. El preflight rechaza mas de 10000 usuarios antes de calcular hashes.
+
+### Cobertura de H-02
+
+Se midio JaCoCo con un exec nuevo, sin acumulacion de ejecuciones previas: [XML preservado](target/h02-evidence/verify/jacoco.xml). Formula: covered/(covered+missed)*100, contador LINE por clase. No se contabilizan tests como produccion ni se excluyeron clases para llegar al umbral.
+
+| Clase modificada | Lineas | Porcentaje |
+|---|---|---|
+| PasswordHasher | 49/53 | 92,45% |
+| PasswordMigration | 152/160 | 95,00% |
+| LegacyDatabase | 48/49 | 97,96% |
+| AuthService | 8/8 | 100% |
+| AuthResource | 28/28 | 100% |
+| StoredUser | 2/2 | 100% |
+
+Total produccion: 295/308 lineas (95,78%), 1383/1437 instrucciones (96,24%) y 118/152 ramas (77,63%). Cada clase modificada cumple el 85% por lineas; no se afirma el mismo umbral por ramas. Se mantuvieron pom.xml y workflows sin cambios en H-02; CodeQL/Dependency Review no se ejecutaron localmente.
+
+### Rendimiento y limites
+
+Cliente reproducible: [run-performance.ps1](target/h02-evidence/run-performance.ps1), cinco calentamientos, cinco peticiones simultaneas y 60 segundos de carga. Se comprueba HTTP 200/identidad/expiresIn y se calcula p95 por nearest rank; no se guardan tokens ni cuerpos de login.
+
+| Modalidad local | Comando del cliente | Muestras/errores | p95 | Resultado |
+|---|---|---|---|---|
+| Quarkus dev | `& ./target/h02-evidence/run-performance.ps1 -Port 51098 -DurationSeconds 60 -Concurrency 5` | 191 / 0 | 1694,483 ms | No cumple; exit 1; [resultado preservado](target/h02-evidence/performance-dev.json) |
+| Artefacto empaquetado, JVM normal | `& ./target/h02-evidence/run-performance.ps1 -Port 51099 -DurationSeconds 60 -Concurrency 5` | 1262 / 0 | 312,472 ms | Cumple; exit 0; [resultado](target/h02-evidence/performance-packaged.json), [muestras](target/h02-evidence/performance-packaged-latencies.csv) |
+
+Se empaqueto con `mvn -B quarkus:build` (exit 0) y ejecuto `java -Dquarkus.http.port=51099 -Dquarkus.http.host=127.0.0.1 -Dauth.password.iterations=600000 -jar target/quarkus-app/quarkus-run.jar`, con AUTH_DB_URL a otra SQLite bajo target. Se uso JDK 21 en Windows local y se mantuvo el mismo coste KDF, concurrencia, duracion y objetivo. El p95 aprobado se acredita en la modalidad empaquetada; no se promete que dev cumpla ni se atribuye la diferencia a una causa no demostrada. Ambos servidores temporales fueron detenidos.
+
+### Diff y desviaciones
+
+[Diff consolidado de H-02](target/h02-evidence/H-02.patch), con codigo y pruebas; los tres diffs de etapa permiten revisar seguridad, migracion e integracion por separado. README documenta configuracion, parada offline, backup, rollback y residuos sensibles.
+
+No hay dependencias nuevas, reduccion de gates ni cambios al token/contrato cliente. Se mantiene explicitamente la limitacion de rendimiento dev. La migracion requiere archivo SQLite local simple y aborta ante URI/memory/parametros de conexion para no respaldar un archivo diferente al configurado; esta restriccion operativa queda en README. La base real del usuario no fue migrada. Los respaldos de ensayo contienen solo fixtures; la ausencia de claro en el esquema no se presenta como borrado forense de WAL/snapshots. Los demas hallazgos conservan sus estados.
