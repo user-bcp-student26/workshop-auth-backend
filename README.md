@@ -19,6 +19,17 @@ Credenciales locales:
 - `student` / `Workshop123!`
 - `trainer` / `Trainer123!`
 
+## Migración de contraseñas
+
+Al arrancar, `LegacyDatabase` convierte las contraseñas en claro a hash PBKDF2-HMAC-SHA256 en una sola transacción. Si la base tiene más de 10000 usuarios o la migración falla, el arranque se detiene y ninguna fila queda a medias. Los valores ya hasheados (`pbkdf2_sha256$...`) se omiten, así que la migración solo hace trabajo una vez.
+
+Antes de arrancar con una base real:
+
+1. Detener el servicio.
+2. Copiar el archivo SQLite (`data/workshop.db` o el valor de `AUTH_DB_URL`) a un respaldo, por ejemplo `workshop.db.bak`.
+3. Arrancar el servicio.
+4. Si el arranque falla, restaurar el respaldo y revisar el log.
+
 ## Endpoints
 
 - `POST /auth/login`

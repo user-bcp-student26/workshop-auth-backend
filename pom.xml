@@ -12,6 +12,7 @@
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.version>3.27.4</quarkus.platform.version>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
+        <maven.build.timestamp.format>yyyyMMdd-HHmmss-SSS</maven.build.timestamp.format>
     </properties>
 
     <dependencyManagement>
@@ -76,6 +77,9 @@
                     <systemPropertyVariables>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                     </systemPropertyVariables>
+                    <environmentVariables>
+                        <AUTH_DB_URL>jdbc:sqlite:${project.build.directory}/auth-test-${maven.build.timestamp}.db</AUTH_DB_URL>
+                    </environmentVariables>
                 </configuration>
             </plugin>
             <plugin>
