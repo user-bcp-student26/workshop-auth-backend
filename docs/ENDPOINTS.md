@@ -10,6 +10,8 @@ del Resource se contrastaron con sus pruebas de caracterizacion.
 Este documento describe implementacion y defectos actuales, no una API ideal.
 Los problemas pendientes se siguen solo en [HALLAZGOS.md](../HALLAZGOS.md).
 
+Corregido el 2026-10-21 en las afirmaciones de seguridad y en las referencias a clases que no existen en `src/main`. El resto de referencias de linea no se revalido.
+
 ## POST /auth/login
 
 ### 1. Que hace
@@ -23,7 +25,7 @@ Ruta y metodo: [src/main/java/com/bcp/workshop/auth/AuthResource.java:12](../src
 
 No requiere autenticacion previa ni header `Authorization`. La identidad se
 comprueba con username/password del cuerpo, no con Basic Auth ni con un token
-de entrada ([src/main/java/com/bcp/workshop/auth/AuthService.java:17](../src/main/java/com/bcp/workshop/auth/AuthService.java#L17)).
+de entrada ([src/main/java/com/bcp/workshop/auth/AuthResource.java:24](../src/main/java/com/bcp/workshop/auth/AuthResource.java#L24)).
 
 Enviar `Content-Type: application/json` y `Accept: application/json`.
 El Resource consume y produce JSON
@@ -78,10 +80,7 @@ por el cliente. No se devuelven id, password, hash ni client.
 | user.role | string | Rol almacenado. Los seeds usan STUDENT y TRAINER; el codigo no define un enum ni restringe todos los usuarios a esos dos valores. |
 | debug | string | Valor literal `authenticated-with-legacy-flow`, que sigue presente tras el refactor. |
 
-Evidencia: [src/main/java/com/bcp/workshop/auth/LoginResponse.java:3](../src/main/java/com/bcp/workshop/auth/LoginResponse.java#L3),
-[src/main/java/com/bcp/workshop/auth/UserResponse.java:5](../src/main/java/com/bcp/workshop/auth/UserResponse.java#L5),
-[src/main/java/com/bcp/workshop/auth/TokenPolicy.java:4](../src/main/java/com/bcp/workshop/auth/TokenPolicy.java#L4),
-[src/main/java/com/bcp/workshop/auth/LegacyDatabase.java:53](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L53).
+Evidencia: [src/main/java/com/bcp/workshop/auth/AuthResource.java](../src/main/java/com/bcp/workshop/auth/AuthResource.java), metodo `login`. El token se genera en [LegacyTokenUtil.java](../src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java).
 
 Ejemplo JSON real y completo capturado el 2026-10-06 para la entrada anterior.
 El token es un snapshot de laboratorio, no un token vigente para reutilizar:
@@ -131,8 +130,8 @@ Estos tres mensajes proceden de
 y de sus guard clauses en
 [src/main/java/com/bcp/workshop/auth/AuthResource.java:38](../src/main/java/com/bcp/workshop/auth/AuthResource.java#L38).
 
-**401 Unauthorized: no se pudo autenticar.** Usuario inexistente, password
-incorrecto o hash rechazado producen el mismo mensaje. El username enviado
+**401 Unauthorized: no se pudo autenticar.** Usuario inexistente o password
+incorrecto producen el mismo mensaje. El username enviado
 se concatena literalmente en message. Ejemplo con student y password `wrong`:
 
 ```json
@@ -142,7 +141,6 @@ se concatena literalmente en message. Ejemplo con student y password `wrong`:
 Tambien ocurre si la consulta SQLite falla: el repositorio captura el error y
 devuelve null. No interpretar este 401 como prueba de que la base funciona.
 Evidencia: [src/main/java/com/bcp/workshop/auth/AuthResource.java:55](../src/main/java/com/bcp/workshop/auth/AuthResource.java#L55),
-[src/main/java/com/bcp/workshop/auth/AuthService.java:19](../src/main/java/com/bcp/workshop/auth/AuthService.java#L19),
 [src/main/java/com/bcp/workshop/auth/LegacyDatabase.java:153](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L153).
 
 **500 Internal Server Error: excepcion capturada por el Resource.** Devuelve
@@ -196,15 +194,11 @@ no existe una respuesta HTTP de login para ese fallo
   de la emision; no hay validacion de ese timestamp en este backend emisor.
   No afirmar que expira de manera efectiva en todos los consumidores.
   [src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java:13](../src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L13).
-- Existe TokenService RS256, pero el login NO lo llama: sigue invocando
-  LegacyTokenUtil. El cliente no debe intentar interpretar el token como JWT.
-  [src/main/java/com/bcp/workshop/auth/AuthService.java:30](../src/main/java/com/bcp/workshop/auth/AuthService.java#L30).
-  Pregunta abierta: cuando se activara JWT y que consumidores verificaran firma,
-  issuer, rol y expiracion. No se inspeccionaron otros repositorios.
-- Passwords se verifican con Argon2id y salt aleatorio, y username se consulta
-  con PreparedStatement. Nunca se devuelve el hash.
-  [src/main/java/com/bcp/workshop/auth/PasswordHasher.java:20](../src/main/java/com/bcp/workshop/auth/PasswordHasher.java#L20),
-  [src/main/java/com/bcp/workshop/auth/LegacyDatabase.java:148](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L148).
+- El login emite el token con `LegacyTokenUtil` (Base64 sin firma). No existe `TokenService` en `src/main` y este backend no valida firma. El cliente no debe interpretar el token como JWT.
+  [src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java:13](../src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java#L13).
+  Pregunta abierta: que consumidores verificaran firma, issuer, rol y expiracion cuando se implemente el token firmado (`hu-01-token-firmado-claims`, Issue #15).
+- Las contrasenas se guardan en claro y se comparan en SQL, sin hash (H-02, Issue #14). La consulta concatena `username` y `password` (H-01, Issue #13). El contrato anterior afirmaba Argon2id y PreparedStatement; el codigo no los usa.
+  [src/main/java/com/bcp/workshop/auth/LegacyDatabase.java:32](../src/main/java/com/bcp/workshop/auth/LegacyDatabase.java#L32).
   El saneamiento de WAL sigue pendiente segun [HALLAZGOS.md](../HALLAZGOS.md).
 - Los 500 exponen detalles internos; debug y el secreto de laboratorio dentro
   del token siguen presentes. No enviar ni registrar tokens/passwords reales

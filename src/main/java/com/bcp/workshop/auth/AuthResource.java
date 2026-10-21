@@ -8,14 +8,22 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.apache.commons.text.StringEscapeUtils;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 @Path("/auth")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public class AuthResource {
+    private static final Logger LOG = Logger.getLogger(AuthResource.class.getName());
+
+    @ConfigProperty(name = "auth.token.secret", defaultValue = "")
+    String authTokenSecret;
+
     @Inject
     LegacyDatabase database;
 
@@ -36,7 +44,7 @@ public class AuthResource {
                         if (user == null) {
                             return Response.status(401).entity(Map.of("message", "Invalid user " + request.username + " or password")).build();
                         } else {
-                            String token = LegacyTokenUtil.create(user.username(), user.role());
+                            String token = LegacyTokenUtil.create(user.username(), user.role(), authTokenSecret);
                             Map<String, Object> response = new HashMap<>();
                             response.put("token", token);
                             response.put("expiresIn", 3600);
@@ -52,10 +60,8 @@ public class AuthResource {
                 }
             }
         } catch (Exception error) {
-            return Response.status(500).entity(Map.of(
-                    "message", error.getMessage() == null ? "Unknown error" : error.getMessage(),
-                    "exception", error.getClass().getName()
-            )).build();
+            LOG.log(Level.SEVERE, "Unexpected error during login", error);
+            return Response.status(500).entity(Map.of("message", "Internal error")).build();
         }
     }
 }

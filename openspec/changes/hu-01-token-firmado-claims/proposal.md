@@ -1,64 +1,82 @@
 ## Referencia
 
-- Issue: [#11 Especificaciones para HU-01](https://github.com/user-bcp-student26/workshop-auth-backend/issues/11)
-- Historia de origen: [HU-01.md](../../../HU-01.md)
-- Contrato baseline: [docs/ENDPOINTS.md](../../../docs/ENDPOINTS.md), sección `POST /auth/login`
+- Issues de trabajo en `user-bcp-student26/workshop-auth-backend`:
+  - [#13](https://github.com/user-bcp-student26/workshop-auth-backend/issues/13): H-01, SQL de autenticación concatenado. Severidad alta.
+  - [#14](https://github.com/user-bcp-student26/workshop-auth-backend/issues/14): H-02, contraseñas en texto plano. Severidad alta.
+  - [#15](https://github.com/user-bcp-student26/workshop-auth-backend/issues/15): H-03, token Base64 sin firma y con secreto embebido. Severidad alta.
+  - [#16](https://github.com/user-bcp-student26/workshop-auth-backend/issues/16): H-04, secreto fijo y CORS abierto. Severidad media.
+  - [#12](https://github.com/user-bcp-student26/workshop-auth-backend/issues/12): H-05, el 500 expone detalles internos. Severidad media.
+- Hallazgos de origen: [HALLAZGOS.md](../../../HALLAZGOS.md), H-01 a H-05. Campo `Hallazgo origen` en el Project ReqFlow (proyecto 5).
+- Contrato baseline: [docs/ENDPOINTS.md](../../../docs/ENDPOINTS.md), sección `POST /auth/login`.
+- Nombre del cambio: se conserva `hu-01-token-firmado-claims` por ser el nombre ya creado. El alcance real son los Issues #12 a #16.
 
 ## Por qué
 
-Según el contrato actual, el `token` de `POST /auth/login` es Base64 de `username|role|expiry|SECRET`, sin firma. El secreto de laboratorio está en el código y viaja dentro del token. Además, `expiresIn` es una constante 3600 sin relación verificable con el `exp` real. Sin claims `sub`, `client`, `iat` y `exp`, los consumidores no pueden confiar en la identidad, el cliente ni la vigencia del token.
+`POST /auth/login` tiene cinco defectos que permiten acceso no autorizado o divulgan información interna: la consulta concatena credenciales (H-01), las contraseñas están en texto plano (H-02), el token es Base64 sin firma con el secreto dentro (H-03), el secreto está fijo y CORS acepta cualquier origen (H-04), y el 500 expone el nombre de la excepción y su mensaje (H-05). Los consumidores dependen de ese contrato, así que cada cambio debe ser explícito y verificable.
 
-## Comportamiento que cambia frente al contrato
+## Cambios de comportamiento frente al contrato
 
-| Aspecto | Contrato actual (`docs/ENDPOINTS.md`) | Cambio propuesto | Motivo |
+Solo se listan los cambios de los Issues. El resto del contrato se preserva.
+
+| Aspecto | Contrato actual (`docs/ENDPOINTS.md`) | Cambio propuesto | Issue |
 |---|---|---|---|
-| `client` | Opcional; no interviene ni se devuelve | Obligatorio, no vacío, máximo 64 caracteres, formato libre; se refleja en el claim `client` | HU-01: obtener `client` de la solicitud, validarlo y reflejarlo en el token |
-| `token` | Base64 sin firma; no es JWT | Token firmado con claims `sub`, `client`, `iat` y `exp` | HU-01: token firmado con claims mínimos |
-| `expiresIn` | Constante 3600 | `exp - now`, dentro de una tolerancia | HU-01: coherencia entre `expiresIn` y `exp` |
-| Secreto | `SECRET` embebido en `LegacyTokenUtil` | Lectura desde `AUTH_TOKEN_SECRET`, sin valor por defecto fuera de laboratorio | HU-01: eliminar secreto por defecto |
-| Logs | No especificado | Ni token ni secreto en logs | HU-01 |
+| Consulta de login | Sin cambio observable | La consulta deja de concatenar credenciales | #13 |
+| Contraseñas | Documenta Argon2id y `PreparedStatement`; el código guarda y compara en claro | Solo se almacena un hash con sal | #14 |
+| `token` | Base64 de `username\|role\|expiry\|SECRET`, no JWT | Token firmado y verificable; cambia el formato | #15 |
+| Secreto de firma | Fijo en `LegacyTokenUtil` | Viene de configuración externa, sin valor por defecto en el código | #16 |
+| CORS | `origins=/.*/` | Solo orígenes listados por entorno | #16 |
+| `500` | `message` y `exception` con el nombre completo de la clase | Mensaje genérico, sin nombre de clase; la excepción se registra en el log | #12 |
 
-Los demás comportamientos del contrato se preservan tal como están documentados.
+Nota: el contrato afirma Argon2id, pero el código no lo usa. Este cambio cumple el requisito de almacenamiento seguro; no conserva la afirmación actual del código.
 
 ## Alcance
 
-- `POST /auth/login` emite un token firmado con claims `sub`, `client`, `iat` y `exp`.
-- Validación de `client` como obligatorio, máximo 64 caracteres y reflejo en el token.
-- `expiresIn` calculado desde `exp - now` con tolerancia de 5 segundos.
-- `AUTH_TOKEN_SECRET` como única fuente del secreto de firma.
-- Redacción de token y secreto en logs.
-- Pruebas de login válido, credenciales inválidas, `client` ausente y token expirado.
-- Registrar la decisión entre HMAC y una librería JWT, sin elegirla en esta propuesta.
+- Parametrizar la consulta de autenticación (#13).
+- Almacenar contraseñas como hash con sal y verificarlas en el login, con migración atómica de la base existente (#14).
+- Emitir un token firmado con clave fuera del código fuente y un verificador testeable (#15).
+- Leer el secreto de configuración externa y restringir CORS por entorno (#16).
+- Devolver un 500 sin detalles internos y registrar la excepción en el log del servidor (#12).
 
 ## Fuera de alcance
 
-- Diseño técnico e implementación (clases, algoritmo, librería). Se aborda en una fase posterior.
-- `tasks.md`.
+- Claims de HU-01 (`client` obligatorio, `sub`, `client`, `iat`, `exp` y `expiresIn` calculado). Se tratan en el cambio aparte `hu-01-claims-token`.
+- Endpoint de verificación de tokens y cualquier endpoint distinto de `POST /auth/login`.
 - Refresh, revocación o cierre de sesión.
-- Gestión de usuarios, roles o credenciales en `LegacyDatabase`.
-- `GET /q/health` y cualquier endpoint distinto de `POST /auth/login`.
-- Activar `TokenService` RS256 o definir qué consumidores verifican firma, issuer y expiración.
-- Auditoría de seguridad exhaustiva (corresponde a `security-review`).
+- Activar `TokenService` RS256.
+- Retirar el campo `debug` de la respuesta.
+- Cambiar `GET /q/health`.
+- Hallazgo H-06 (dependencias) y H-07 (refactor del Resource).
+- Auditoría de seguridad exhaustiva.
+- Diseño técnico: algoritmos, clases y librerías. Corresponde a la fase de diseño.
 
 ## Comportamiento que debe preservarse
 
-- Ruta y verbo: `POST /auth/login`, `Content-Type` y `Accept` `application/json`.
-- Orden de validación: solicitud nula, luego `username`, luego `password`.
-- Mensajes exactos `Request is null`, `Username is required` y `Password is required` con status `400`.
-- `401` con `{"message":"Invalid user <username> or password"}` para usuario inexistente, password incorrecto o fallo de consulta.
-- `500` con `message` y `exception`, y `Unknown error` cuando la excepción no tiene mensaje.
-- Errores del framework (400 por JSON malformado, 405, 406, 415) con cuerpo vacío y sin mensaje JSON.
-- Respuesta `200` con `username`, `displayName` escapado con `escapeHtml4`, `role` y `debug` con valor `authenticated-with-legacy-flow`, que se conserva en esta iteración.
+- Ruta y verbo `POST /auth/login`; `Content-Type` y `Accept` `application/json`.
+- Orden de validación: solicitud nula, luego `username`, luego `password`. Mensajes exactos `Request is null`, `Username is required` y `Password is required`, con status `400`.
+- `401` con `{"message":"Invalid user <username> or password"}` sin `token` para usuario inexistente, contraseña incorrecta o fallo de consulta.
+- Errores del framework (400 por JSON malformado, 405, 406, 415) con cuerpo vacío.
+- `200` con `user.username`, `user.displayName` escapado con `escapeHtml4`, `user.role`, `expiresIn` numérico `3600` y `debug` con valor `authenticated-with-legacy-flow`.
 - La identidad procede de la base de datos, no de campos enviados por el cliente.
-- Passwords verificados con Argon2id y nunca devueltos.
+- Las respuestas no incluyen `id`, contraseña ni hash.
+- `client` sigue siendo opcional y no interviene en la respuesta.
+- Las cuentas `student` y `trainer` siguen autenticando con sus credenciales de laboratorio.
+
+## Criterios de verificación
+
+- Las pruebas de `POST /auth/login` (200, 400, 401) y `GET /q/health` deben pasar. Las de login y salud están en `AuthResourceTest` y `HealthResourceTest`; solo cambian las expectativas que un Issue modifica, como el `500` de #12.
+- Cada Issue añade pruebas que fallan antes del cambio y pasan después.
+- Las pruebas usan `AUTH_DB_URL` apuntando a un archivo bajo `target/`, nunca a la base de desarrollo.
 
 ## Decisiones tomadas
 
-- `debug` se conserva. Retirarlo requiere aviso previo a los consumidores y se trata en una historia posterior.
-- `client` es de formato libre, no vacío y de máximo 64 caracteres; no se valida contra lista cerrada.
-- Tolerancia de `expiresIn` frente a `exp - now`: 5 segundos.
+- El alcance son los Issues #12 a #16. Los claims de HU-01 se tratan en `hu-01-claims-token`.
+- La verificación del token es una función interna probada por pruebas, sin endpoint.
+- Cada cambio de contrato es intencional y debe reflejarse en la especificación correspondiente y en `docs/ENDPOINTS.md` al implementar.
+- El cambio de formato del token no se despliega hasta confirmar con los consumidores.
 
 ## Preguntas abiertas
 
-- El contrato no define validación de tokens en el backend. La prueba de expiración se formula sobre los claims emitidos; un verificador requiere una propuesta posterior.
-- `TokenService` RS256 existente queda fuera de alcance; su activación se decide junto con HMAC frente a JWT.
+1. **Consumidores del token:** confirmar con los dueños del frontend Angular y de la API Python que no decodifican el Base64 actual. Bloquea el despliegue, no la especificación.
+2. **Migración de contraseñas:** #14 exige documentar la migración. Falta decidir si ocurre al arrancar o con una herramienta aparte.
+3. **Algoritmos:** la elección del algoritmo de hash y de firma queda para la fase de diseño.
+4. **Mensaje del 401:** incluye el `username` enviado. No está en los Issues; se preserva por contrato y puede tratarse como hallazgo aparte.
